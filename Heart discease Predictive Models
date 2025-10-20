@@ -1,0 +1,109 @@
+{
+  "cells": [
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "wO-cQFfxups4",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "fa46b034-176d-41b0-bd7b-6d844b241613"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "=== RESULTADOS ===\n",
+            "Gradient Boosting (5 reps): 0.910\n",
+            "XGBoost (5 reps):           0.893\n",
+            "LightGBM (5 reps):          0.900\n"
+          ]
+        }
+      ],
+      "source": [
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from sklearn.ensemble import GradientBoostingClassifier\n",
+        "from sklearn.metrics import roc_auc_score\n",
+        "from xgboost import XGBClassifier\n",
+        "from lightgbm import LGBMClassifier\n",
+        "from sklearn.base import clone\n",
+        "\n",
+        "#Carga del dataset\n",
+        "url = \"https://www.statlearning.com/s/Heart.csv\"\n",
+        "df = pd.read_csv(url)\n",
+        "\n",
+        "#Limpieza de datos\n",
+        "df = df.replace(\"NA\", np.nan)\n",
+        "df = df.fillna(df.median(numeric_only=True))\n",
+        "df[\"AHD\"] = df[\"AHD\"].map({\"No\": 0, \"Yes\": 1})\n",
+        "\n",
+        "#Uso get_dummies para variables categoricas\n",
+        "X = pd.get_dummies(df.drop(\"AHD\", axis=1), drop_first=True) #Utilizo el \"OneHot Encoding\"\n",
+        "y = df[\"AHD\"].values  #Variable a predecir\n",
+        "\n",
+        "#Adaptaciones para usar XGBoost / LightGBM\n",
+        "X_xgb = X.values #Convierte a matriz NumPy\n",
+        "X_lgb = X.copy() #Crea copia segura del DataFrame para no usar el df original\n",
+        "X_lgb.columns = [f\"f{i}\" for i in range(X_lgb.shape[1])] #Renombro columnas para no tener errores\n",
+        "\n",
+        "#Cross Validacion Manual: 5 repeticiones de split 80/20\n",
+        "def mi_validacion_auc(model, X, y, repeticiones=5, semilla=42):\n",
+        "    rng = np.random.RandomState(semilla)\n",
+        "    aucs = []\n",
+        "    for _ in range(repeticiones):\n",
+        "        idx = rng.permutation(len(y))\n",
+        "        corte = int(0.8 * len(y))\n",
+        "        train_idx, test_idx = idx[:corte], idx[corte:]\n",
+        "        Xtr = X.iloc[train_idx] if isinstance(X, pd.DataFrame) else X[train_idx]\n",
+        "        Xte = X.iloc[test_idx] if isinstance(X, pd.DataFrame) else X[test_idx]\n",
+        "        m = clone(model)\n",
+        "        m.fit(Xtr, y[train_idx])\n",
+        "        pred = m.predict_proba(Xte)[:, 1]\n",
+        "        aucs.append(roc_auc_score(y[test_idx], pred))\n",
+        "    return np.mean(aucs)\n",
+        "\n",
+        "#Crear los modelos\n",
+        "gb = GradientBoostingClassifier(max_depth=2, n_estimators=100, random_state=42)\n",
+        "xgb = XGBClassifier(eval_metric='logloss', random_state=42)\n",
+        "lgb = LGBMClassifier(max_depth=-1, num_leaves=31, verbose=-1, random_state=42)\n",
+        "\n",
+        "#Evaluar con la validación cruzada manual\n",
+        "auc_gb = mi_validacion_auc(gb, X, y)\n",
+        "auc_xgb = mi_validacion_auc(xgb, X_xgb, y)\n",
+        "auc_lgb = mi_validacion_auc(lgb, X_lgb, y)\n",
+        "\n",
+        "#Mostrar resultados\n",
+        "print(\"=== RESULTADOS ===\")\n",
+        "print(f\"Gradient Boosting (5 reps): {auc_gb:.3f}\")\n",
+        "print(f\"XGBoost (5 reps):           {auc_xgb:.3f}\")\n",
+        "print(f\"LightGBM (5 reps):          {auc_lgb:.3f}\")"
+      ]
+    }
+  ],
+  "metadata": {
+    "colab": {
+      "provenance": []
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    },
+    "language_info": {
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "file_extension": ".py",
+      "mimetype": "text/x-python",
+      "name": "python",
+      "nbconvert_exporter": "python",
+      "pygments_lexer": "ipython3",
+      "version": "3.11.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
